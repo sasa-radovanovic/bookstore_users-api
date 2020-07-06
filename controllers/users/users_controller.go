@@ -10,12 +10,15 @@ import (
 	"github.com/sasa-radovanovic/bookstore_users-api/utils/errors"
 )
 
+const (
+	userIDPathParam = "user_id"
+)
+
 // GetUser handler
 func GetUser(c *gin.Context) {
-	userID, userErr := strconv.ParseInt(c.Param("user_id"), 10, 64)
+	userID, userErr := getUserIDPathParam(c)
 	if userErr != nil {
-		restErr := errors.NewBadRequestError("invalid user id")
-		c.JSON(restErr.Code, restErr)
+		c.JSON(userErr.Code, userErr)
 		return
 	}
 	user, getErr := services.GetUser(userID)
@@ -23,7 +26,7 @@ func GetUser(c *gin.Context) {
 		c.JSON(getErr.Code, getErr)
 		return
 	}
-	c.JSON(http.StatusOK, user)
+	c.JSON(http.StatusOK, user.Marshall(c.GetHeader("X-Public") == "true"))
 }
 
 // CreateUser creates user
@@ -40,10 +43,64 @@ func CreateUser(c *gin.Context) {
 		c.JSON(saveErr.Code, saveErr)
 		return
 	}
-	c.JSON(http.StatusCreated, result)
+	c.JSON(http.StatusCreated, result.Marshall(c.GetHeader("X-Public") == "true"))
 }
 
-// SearchUser finds the user
-func SearchUser(c *gin.Context) {
-	c.String(http.StatusNotImplemented, "Not ready yet")
+// UpdateUser updates given user
+func UpdateUser(c *gin.Context) {
+	userID, userErr := getUserIDPathParam(c)
+	if userErr != nil {
+		c.JSON(userErr.Code, userErr)
+		return
+	}
+	var user users.User
+	if err := c.ShouldBindJSON(&user); err != nil {
+		restErr := errors.NewBadRequestError("invalid json body")
+		c.JSON(restErr.Code, restErr)
+		return
+	}
+	user.ID = userID
+
+	isPartial := c.Request.Method == http.MethodPatch
+	result, saveErr := services.UpdateUser(user, isPartial)
+	if saveErr != nil {
+		c.JSON(saveErr.Code, saveErr)
+		return
+	}
+	c.JSON(http.StatusOK, result.Marshall(c.GetHeader("X-Public") == "true"))
+}
+
+// DeleteUser deletes user from the database
+func DeleteUser(c *gin.Context) {
+	userID, userErr := getUserIDPathParam(c)
+	if userErr != nil {
+		c.JSON(userErr.Code, userErr)
+		return
+	}
+	result, saveErr := services.DeleteUser(userID)
+	if saveErr != nil {
+		c.JSON(saveErr.Code, saveErr)
+		return
+	}
+	c.JSON(http.StatusOK, result.Marshall(c.GetHeader("X-Public") == "true"))
+}
+
+// Extracts user_id param from URL path
+func getUserIDPathParam(c *gin.Context) (int64, *errors.RestErr) {
+	userID, userErr := strconv.ParseInt(c.Param("user_id"), 10, 64)
+	if userErr != nil {
+		return 0, errors.NewBadRequestError("invalid user id")
+	}
+	return userID, nil
+}
+
+// FindByStatus executes a search based on status
+func FindByStatus(c *gin.Context) {
+	status := c.Query("status")
+	users, err := services.Search(status)
+	if err != nil {
+		c.JSON(err.Code, err)
+		return
+	}
+	c.JSON(http.StatusOK, users.Marshall(c.GetHeader("X-Public") == "true"))
 }
