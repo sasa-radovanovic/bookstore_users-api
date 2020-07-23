@@ -2,6 +2,7 @@ package users
 
 import (
 	"fmt"
+	"strings"
 
 	usersdb "github.com/sasa-radovanovic/bookstore_users-api/datasources/mysql/users_db"
 	"github.com/sasa-radovanovic/bookstore_users-api/logger"
@@ -11,13 +12,14 @@ import (
 )
 
 const (
-	uniqueEmail       = "email_UNIQUE"
-	noRowsInResultSet = "no rows in result set"
-	insertQuery       = "INSERT INTO users(first_name, last_name, email, date_created, status, password) VALUES (?, ?, ?, ?, ?, ?);"
-	selectUserQuery   = "SELECT id, first_name, last_name, email, date_created, status FROM users WHERE id=?;"
-	updateUserQuery   = "UPDATE users SET first_name=?, last_name=?, email=? WHERE id=?;"
-	deleteUserQuery   = "DELETE FROM users WHERE id=?;"
-	findUserByStatus  = "SELECT id, first_name, last_name, email, date_created, status FROM users where status=?;"
+	uniqueEmail                = "email_UNIQUE"
+	noRowsInResultSet          = "no rows in result set"
+	insertQuery                = "INSERT INTO users(first_name, last_name, email, date_created, status, password) VALUES (?, ?, ?, ?, ?, ?);"
+	selectUserQuery            = "SELECT id, first_name, last_name, email, date_created, status FROM users WHERE id=?;"
+	updateUserQuery            = "UPDATE users SET first_name=?, last_name=?, email=? WHERE id=?;"
+	deleteUserQuery            = "DELETE FROM users WHERE id=?;"
+	findUserByStatus           = "SELECT id, first_name, last_name, email, date_created, status FROM users where status=?;"
+	findUserByEmailAndPassword = "SELECT id, first_name, last_name, email, date_created, status FROM users WHERE email=? AND password=? AND status=?;"
 )
 
 // Get user from database
@@ -120,4 +122,24 @@ func (user *User) FindByStatus(status string) ([]User, *errors.RestErr) {
 		return nil, errors.NewNotFoundError(fmt.Sprintf("no users matching status %s", status))
 	}
 	return results, nil
+}
+
+// FindByEmailAndPassword user from database
+func (user *User) FindByEmailAndPassword() *errors.RestErr {
+	stmt, err := usersdb.ClientDB.Prepare(findUserByEmailAndPassword)
+	if err != nil {
+		logger.Error("error when trying to prepare a statement", err)
+		return errors.NewInternalServerError("database error")
+	}
+	defer stmt.Close()
+
+	result := stmt.QueryRow(user.Email, user.Password, StatusActive)
+	if err := result.Scan(&user.ID, &user.FirstName, &user.LastName, &user.Email, &user.DateCreated, &user.Status); err != nil {
+		if strings.Contains(err.Error(), mysqlutils.NoRows) {
+			return errors.NewNotFoundError("invalid user credentials")
+		}
+		logger.Error("mysql error", err)
+		return mysqlutils.ParseMySQLError(err)
+	}
+	return nil
 }
